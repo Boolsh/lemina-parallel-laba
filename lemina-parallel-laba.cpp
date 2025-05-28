@@ -9,6 +9,8 @@
 #include <stdlib.h>
 #include <vector>
 #include <Windows.h>
+#include <omp.h>
+#include <condition_variable>
 
 const int rectangle_cnt = 10;
 
@@ -38,6 +40,10 @@ float parallel_interlocked(float a, float b, std::string& expr, int num_threads)
 
 float parallel_threadpool(float a, float b, std::string& expr, int num_threads);
 
+float parallel_producer_consumer(float a, float b, std::string& expr, int num_threads);
+
+float parallel_omp_integral(float a, float b, std::string& expr, int num_threads);
+
 int main()
 {
 	SetConsoleOutputCP(1251);
@@ -54,10 +60,12 @@ int main()
 	std::cout << "Parallel result (Future): " << parallel_future(a, b, str, rectangle_cnt / 5) << std::endl;
 	std::cout << "Parallel result (Inter): " << parallel_interlocked(a, b, str, rectangle_cnt / 5) << std::endl;
 	std::cout << "Parallel result (Pool): " << parallel_threadpool(a, b, str, rectangle_cnt / 5) << std::endl;
+	std::cout << "Parallel result (OpenMP): " << parallel_omp_integral(a, b, str, rectangle_cnt / 5) << std::endl;
+	std::cout << "Parallel result (PC): " << parallel_producer_consumer(a, b, str, rectangle_cnt / 5) << std::endl;
 }
 
 
-//WinAPI
+//////////////////////////////////////////////////////////////////////////// WinAPI////////////////////////////////////////////////////////////////////////////////////////
 struct ThreadDataW {
 	float start, end, step, *partial_result;
 	std::string* expr;
@@ -119,7 +127,7 @@ float parallel_winapi(float a, float b, std::string& expr, int num_threads) {
 
 	return total_result;
 }
-//Threads
+//////////////////////////////////////////////////////////////////////////// std::threads////////////////////////////////////////////////////////////////////////////////////////
 struct ThreadDataT {
 	float start;
 	float end;
@@ -175,7 +183,7 @@ float parallel_std_thread(float a, float b, std::string& expr, int num_threads) 
 
 	return total_result;
 }
-//future
+//////////////////////////////////////////////////////////////////////////// Future////////////////////////////////////////////////////////////////////////////////////////
 float calculate_part(float start, float end, std::string& expr, float step) {
 	float res = 0.0f;
 	float x = start + step / 2.0f;
@@ -212,7 +220,7 @@ float parallel_future(float a, float b, std::string& expr, int num_threads) {
 
 	return total_result;
 }
-//Атомарные типы
+//////////////////////////////////////////////////////////////////////////// Atomic types////////////////////////////////////////////////////////////////////////////////////////
 struct ThreadDataIL {
 	float start;
 	float end;
@@ -262,17 +270,16 @@ float parallel_interlocked(float a, float b, std::string& expr, int num_threads)
 	}
 	return static_cast<float>(total_result) / 1000.0f;
 }
-// Pool
+////////////////////////////////////////////////////////////////////////////Pool////////////////////////////////////////////////////////////////////////////////////////
+
 struct ThreadDataP 
 {
 	float start;
 	float end;
 	std::string expr;
 	float step;
-	float* result;  // Указатель для сохранения результата
+	float* result; 
 };
-
-// Потокобезопасная очередь на мьютексе и условной переменной
 class SafeQueue {
 	std::queue<ThreadDataP> queue;
 	std::mutex mtx;
@@ -305,9 +312,6 @@ public:
 		cv.notify_all();
 	}
 };
-
-
-// Пул потоков для вычисления интеграла
 float parallel_threadpool(float a, float b, std::string& expr, int num_threads) {
 	if (a > b) std::swap(a, b);
 
@@ -358,8 +362,27 @@ float parallel_threadpool(float a, float b, std::string& expr, int num_threads) 
 
 	return total_result;
 }
+//////////////////////////////////////////////////////////////////////////// Prod and Cons ////////////////////////////////////////////////////////////////////////////////////////
 
-//
+//////////////////////////////////////////////////////////////////////////// OpenMP////////////////////////////////////////////////////////////////////////////////////////
+float parallel_omp_integral(float a, float b, std::string& expr, int num_threads) {
+	if (a > b) std::swap(a, b);
+
+	const float step = (b - a) / rectangle_cnt;
+	float total_result = 0.0f;
+
+	omp_set_num_threads(num_threads);
+
+#pragma omp parallel for reduction(+:total_result)
+	for (int i = 0; i < rectangle_cnt; ++i) {
+		float x = a + (i + 0.5f) * step; // Средняя точка интервала
+		float y = calculate(expr, x);
+		total_result += y * step;
+	}
+
+	return total_result;
+}
+
 //Standart
 bool is_cifr(char a)
 {
