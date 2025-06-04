@@ -12,7 +12,7 @@
 #include <omp.h>
 #include <condition_variable>
 
-const int rectangle_cnt = 10;
+const int rectangle_cnt = 100;
 
 
 float const to_angle =  3.14159265/180;
@@ -362,8 +362,58 @@ float parallel_threadpool(float a, float b, std::string& expr, int num_threads) 
 
 	return total_result;
 }
-//////////////////////////////////////////////////////////////////////////// Prod and Cons ////////////////////////////////////////////////////////////////////////////////////////
 
+
+//////////////////////////////////////////////////////////////////////////// Prod and Cons ////////////////////////////////////////////////////////////////////////////////////////
+void worker_thread(SafeQueue& queue) {
+	ThreadDataP task;
+	while (queue.pop(task)) {
+		*(task.result) = calculate_part(task.start, task.end, task.expr, task.step);
+	}
+}
+
+float parallel_producer_consumer(float a, float b, std::string& expr, int num_threads) {
+	if (a > b) std::swap(a, b);
+
+	SafeQueue task_queue;
+	std::vector<float> partial_results(num_threads);
+	std::vector<std::thread> threads;
+
+	// Создаем рабочие потоки
+	for (int i = 0; i < num_threads; ++i) {
+		threads.emplace_back(worker_thread, std::ref(task_queue));
+	}
+
+	// Генерируем задачи
+	float range = b - a;
+	float thread_range = range / num_threads;
+	float step = range / rectangle_cnt;
+
+	for (int i = 0; i < num_threads; ++i) {
+		ThreadDataP task;
+		task.start = a + i * thread_range;
+		task.end = a + (i + 1) * thread_range;
+		task.expr = expr;
+		task.step = step;
+		task.result = &partial_results[i];
+		task_queue.push(task);
+	}
+
+	task_queue.shutdownQueue();
+
+	// Ждем завершения всех потоков
+	for (auto& t : threads) {
+		t.join();
+	}
+
+	// Суммируем результаты
+	float total_result = 0.0f;
+	for (float res : partial_results) {
+		total_result += res;
+	}
+
+	return total_result;
+}
 //////////////////////////////////////////////////////////////////////////// OpenMP////////////////////////////////////////////////////////////////////////////////////////
 float parallel_omp_integral(float a, float b, std::string& expr, int num_threads) {
 	if (a > b) std::swap(a, b);
